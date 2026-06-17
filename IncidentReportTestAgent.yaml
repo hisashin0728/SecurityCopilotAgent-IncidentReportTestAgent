@@ -1,0 +1,129 @@
+Descriptor:
+  Name: IncidentReportTestAgent
+  DisplayName: Incident Report Test Agent
+  Description: >-
+    Security Copilot のカスタムエージェントが正しく稼働するかを確認するためのシンプルな
+    テストエージェント。INPUT パラメータに Incident ID を入力すると、Security Copilot XDR
+    標準スキル GetDefenderIncidentReport（M365 スキルセット）を呼び出してインシデントレポートを生成する。
+    カスタム KQL や外部依存（Teams / Logic App / Sentinel / MDTI）は持たず、
+    標準スキルとエージェントの Instructions のみで完結する最小構成。動作疎通確認に利用する。
+
+AgentDefinitions:
+  - Name: IncidentReportTestAgent
+    DisplayName: Incident Report Test Agent
+    Description: >-
+      Incident ID を INPUT パラメータとして受け取り、Security Copilot XDR 標準スキル
+      GetDefenderIncidentReport を呼び出してインシデントレポートを生成する対話型のテストエージェント。
+      カスタムエージェントの稼働確認を目的とした最小構成。
+    Publisher: Custom
+    Product: Security
+    RequiredSkillsets:
+      - IncidentReportTestAgent
+      - M365
+    AgentSingleInstanceConstraint: None
+    Settings:
+      - Name: IncidentId
+        Label: Incident ID
+        Description: >-
+          レポート対象の Microsoft Defender XDR インシデント ID。この ID を指定するだけでエージェントが動作する。
+          数値の Incident ID、または GUID 形式を指定する。
+        HintText: "例: 12345"
+        SettingType: String
+        Required: true
+    PromptSkill: IncidentReportTestAgent.GenerateIncidentReport
+    Triggers:
+      - Name: Default
+        DefaultPollPeriodSeconds: 0
+        FetchSkill: ''
+        ProcessSkill: IncidentReportTestAgent.GenerateIncidentReport
+
+SkillGroups:
+  # ─────────────────────────────────────────────────
+  # Agent オーケストレーション スキル
+  # Security Copilot XDR 標準スキル GetDefenderIncidentReport (M365) を呼び出す
+  # ─────────────────────────────────────────────────
+  - Format: Agent
+    Skills:
+      - Name: GenerateIncidentReport
+        DisplayName: Generate Incident Report
+        Description: >-
+          INPUT パラメータの IncidentId を使って Security Copilot XDR 標準スキル
+          GetDefenderIncidentReport（M365）を呼び出し、インシデントレポートを生成する。
+        Interfaces:
+          - InteractiveAgent
+        Inputs:
+          - Name: IncidentId
+            Description: >-
+              レポート対象の Microsoft Defender XDR インシデント ID。
+              数値の Incident ID、または GUID 形式を指定する。
+            Required: true
+          - Name: UserRequest
+            Description: >-
+              エージェント実行のトリガーメッセージ。インシデント ID は IncidentId
+              パラメータから取得するため、任意のメッセージで実行可能。
+            Required: false
+            DefaultValue: 'レポートを生成'
+        SuggestedPrompts:
+          - Prompt: インシデントレポートを生成
+            Title: インシデントレポートを生成
+            Personas:
+              - 1
+            IsStarterAgent: true
+          - Prompt: このインシデントの調査・修復アクションを要約して
+          - Prompt: 推奨されるフォローアップアクションを教えて
+        Settings:
+          Model: gpt-4.1
+          OrchestratorSkill: DefaultAgentOrchestrator
+          Instructions: |-
+            # ミッション
+            あなたは Security Copilot のカスタムエージェントが正しく稼働するかを確認するための
+            シンプルなテストエージェントです。INPUT パラメータで渡された **単一の Incident ID** に対して、
+            Security Copilot XDR 標準スキル **GetDefenderIncidentReport**（M365 スキルセット）を呼び出し、
+            生成されたインシデントレポートをユーザーに提示します。
+
+            出力の見出し・補足説明は日本語で記述してください。
+            レポート本文（アクション内容・固有名詞・分析者名など）は標準スキルの出力を尊重します。
+
+            # 起動方式
+            パラメータ「IncidentId」にインシデント ID がセットされた状態で起動される。
+            {{IncidentId}} の値をそのまま Incident ID として使用する。
+              - エージェント実行時に、ユーザーが Settings の「Incident ID」へ直接入力する。
+
+            # ワークフロー
+
+            ## ステップ 1: Incident ID の取得
+            INPUT パラメータ {{IncidentId}} の値を Incident ID として使用する。
+            値が空の場合は、ユーザーに Incident ID の入力を促して処理を終了する。
+
+            ## ステップ 2: 標準スキルでインシデントレポートを生成
+            {{IncidentId}} を使って **GetDefenderIncidentReport**（M365）を呼び出す:
+              - Incident : 対象の Incident ID（{{IncidentId}} の値）
+
+            この標準スキルは、インシデント作成後の活動にフォーカスしたレポートを生成する:
+              - インシデントを調査・修復した担当者（分析者 / 自動化）
+              - インシデントの最初のアクティビティ時刻
+              - 分析者または自動化が実施したすべての調査・修復アクションとその結果
+              - 未実施の推奨フォローアップアクション一覧
+
+            スキルが結果を返さない場合は、
+            「指定された Incident ID に該当するインシデントレポートを生成できませんでした。
+            ID が正しいか、Defender インシデントであるか（Sentinel インシデントは非対応）を確認してください」
+            と表示して終了する。
+
+            ## ステップ 3: レポートの提示
+            GetDefenderIncidentReport の出力をそのまま提示する。
+            必要に応じて、冒頭に対象 Incident ID を明記した日本語の見出しを付与する。
+
+            # 出力フォーマット
+            以下の構成で提示する:
+
+            ## インシデントレポート: {{IncidentId}}
+
+            {GetDefenderIncidentReport が生成したレポート本文}
+
+            ---
+            *このレポートは Security Copilot XDR 標準スキル GetDefenderIncidentReport を用いて、
+            IncidentReportTestAgent が生成しました（カスタムエージェント稼働確認用）。*
+        ChildSkills:
+          - GetDefenderIncidentReport
+
